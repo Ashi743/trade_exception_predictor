@@ -1,0 +1,261 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║           TRADE EXCEPTION PREDICTOR - DEPENDENCY & FLOW CHART                 ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  LAYER 1: DATA & FEATURES (Foundation)                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  generate_data.py (STANDALONE)                                              │
+│      └─ Creates: data/trades_synthetic.csv (15,000 trades)                 │
+│      └─ Dependencies: pandas, numpy, datetime                              │
+│                                                                              │
+│  features.py (CORE MODULE)                                                 │
+│      ├─ Input: pd.DataFrame (raw CSV)                                      │
+│      ├─ Class: FeatureEngineering                                          │
+│      ├─ Process:                                                            │
+│      │   ├─ LabelEncode categoricals                                       │
+│      │   ├─ Create 3 interaction features                                  │
+│      │   └─ StandardScale all features                                     │
+│      ├─ Output: (X: DataFrame[scaled], y: Series[0/1])                    │
+│      └─ Reusable: transform() for inference                                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  LAYER 2: TRAINING (ML Pipeline)                                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  train.py (CORE MODULE)                                                     │
+│      ├─ Input: X_train, y_train, X_test, y_test                            │
+│      ├─ Class: TradeExceptionPredictor                                      │
+│      ├─ Process:                                                            │
+│      │   ├─ Optuna Hyperparameter Optimization                             │
+│      │   │   ├─ TPE Sampler + Median Pruner                               │
+│      │   │   ├─ Metric: ROC-AUC (validation)                              │
+│      │   │   ├─ Parameters: 9 grid options                                │
+│      │   │   └─ Early stopping: 10 rounds                                 │
+│      │   ├─ Train: XGBClassifier with best params                         │
+│      │   ├─ Evaluate: AUC, Precision, Recall, F1                          │
+│      │   └─ Log to MLflow: params + metrics + model                       │
+│      └─ Output: Trained model + MLflow run                                 │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  LAYER 3: ANALYSIS & EXPLAINABILITY                                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  explain.py (ANALYSIS MODULE)                                              │
+│      ├─ Input: Trained XGBClassifier + X_test + y_test                    │
+│      ├─ Class: ExplainabilityAnalyzer                                      │
+│      ├─ Process:                                                            │
+│      │   ├─ Initialize: shap.TreeExplainer(model)                         │
+│      │   ├─ Compute: SHAP values for all instances                        │
+│      │   ├─ Methods:                                                       │
+│      │   │   ├─ get_feature_importance() → mean |SHAP|                   │
+│      │   │   ├─ plot_shap_summary(plot_type='bar')                        │
+│      │   │   ├─ plot_shap_dependence(feature_name)                        │
+│      │   │   ├─ plot_force_plot(instance_idx)                            │
+│      │   │   └─ get_prediction_explanations(idx)                          │
+│      │   └─ Output: Visualizations + Explanation DataFrames               │
+│      └─ Dependencies: shap, pandas, numpy, matplotlib                     │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  LAYER 4: DEPLOYMENT & INFERENCE                                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  score.py (INFERENCE MODULE)                                               │
+│      ├─ Input: Saved model + feature encoder                               │
+│      ├─ Dependencies: features.py (CRITICAL - for transform())            │
+│      ├─ Class: TradeExceptionScoringService                                │
+│      ├─ Methods:                                                            │
+│      │   ├─ __init__(model_path, encoder_path)                            │
+│      │   │   └─ Load: model.pkl + feature_engineer.pkl                   │
+│      │   ├─ run(raw_data) → JSON response                                 │
+│      │   │   ├─ Parse input JSON/dict                                     │
+│      │   │   ├─ Transform: features.py::FeatureEngineering               │
+│      │   │   ├─ Predict: model.predict() + predict_proba()              │
+│      │   │   └─ Return: {prediction, prob_normal, prob_exception}        │
+│      │   └─ init() for Azure ML hooks                                     │
+│      └─ Output: REST endpoint ready                                        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  LAYER 5: AZURE CLOUD ORCHESTRATION                                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  azure/submit_job.py                                                       │
+│      └─ Command: python azure/submit_job.py <sub_id> <rg> <ws>           │
+│      └─ Submits: src/train.py to run on Azure compute cluster              │
+│      └─ Inputs: data/trades_synthetic.csv                                  │
+│      └─ Outputs: Model artifact in Azure ML                               │
+│                                ↓                                            │
+│  azure/register_model.py                                                   │
+│      └─ Command: python azure/register_model.py <sub> <rg> <ws> <run_id> │
+│      └─ Links: MLflow run → Azure ML Model Registry                       │
+│      └─ Metadata: version, tags, metrics (AUC, F1)                        │
+│                                ↓                                            │
+│  azure/deploy_endpoint.py                                                  │
+│      └─ Command: python azure/deploy_endpoint.py <params>                 │
+│      └─ Creates: ManagedOnlineEndpoint                                     │
+│      └─ Deploys:                                                            │
+│      │   ├─ Script: src/score.py                                           │
+│      │   ├─ Env: environment.yml (Conda)                                   │
+│      │   ├─ Compute: Standard_DS2_v2 (1 instance)                         │
+│      │   └─ Ready: REST API endpoint                                       │
+│      └─ Output: Scoring URI for predictions                               │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                      QUICK REFERENCE: FILE LINKAGES                          ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+FILE                    IMPORTS FROM           USED BY                  PURPOSE
+─────────────────────   ─────────────────────  ──────────────────────  ─────────────
+generate_data.py        stdlib                 Manual execution        Create training data
+features.py             sklearn                train.py                Feature pipeline
+                                               score.py
+                                               notebooks
+
+train.py                xgboost, optuna        notebooks               Training engine
+                        mlflow, sklearn        azure/submit_job.py
+
+explain.py              shap, matplotlib       notebooks               Explainability
+                        pandas
+
+score.py                features.py ★          deploy_endpoint.py      Inference service
+                        joblib
+
+submit_job.py           azure.ai.ml            Manual (VSCode)         Cloud training
+
+
+register_model.py       azure.ai.ml            Manual execution        Model registry
+                        mlflow
+
+deploy_endpoint.py      azure.ai.ml            Manual execution        Endpoint setup
+                        score.py
+
+
+notebooks/01_eda.ipynb  pandas, seaborn        User (Jupyter)          Data exploration
+
+notebooks/02_modeling   features.py ★          User (Jupyter)          Full pipeline
+.ipynb                  train.py ★
+                        explain.py
+
+
+★ = Critical dependency for functionality
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                        EXECUTION WORKFLOWS                                   ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+WORKFLOW 1: LOCAL DEVELOPMENT
+──────────────────────────────
+1. python src/generate_data.py
+   └─ Outputs: data/trades_synthetic.csv (if not exists)
+
+2. jupyter notebook notebooks/01_eda.ipynb
+   ├─ Loads: data/trades_synthetic.csv
+   ├─ Imports: pandas, numpy, seaborn
+   └─ Outputs: EDA plots, statistics
+
+3. jupyter notebook notebooks/02_modeling.ipynb
+   ├─ Step 1: Import features, train, explain
+   ├─ Step 2: Load CSV → FeatureEngineering
+   ├─ Step 3: Train → TradeExceptionPredictor
+   ├─ Step 4: Evaluate metrics
+   ├─ Step 5: Analyze → ExplainabilityAnalyzer
+   └─ Step 6: MLflow logs all results
+
+4. mlflow ui --backend-store-uri ./mlflow_tracking
+   └─ View experiments at http://localhost:5000
+
+
+WORKFLOW 2: CLOUD DEPLOYMENT
+──────────────────────────────
+1. python azure/submit_job.py <subscription_id> <resource_group> <workspace>
+   ├─ Submits: train.py to Azure ML compute
+   ├─ Input: data/trades_synthetic.csv
+   └─ Waits for training completion
+
+2. python azure/register_model.py <sub> <rg> <ws> <mlflow_run_id>
+   ├─ Fetches: Model from MLflow
+   ├─ Registers: To Azure ML Model Registry
+   └─ Tags: With version, metrics
+
+3. python azure/deploy_endpoint.py <sub> <rg> <ws> <model> <version>
+   ├─ Creates: ManagedOnlineEndpoint
+   ├─ Deploys: score.py + features.py
+   ├─ Loads: environment.yml
+   └─ Returns: Scoring URI
+
+4. Inference: POST {scoring_uri}/score
+   ├─ Input: JSON {counterparty, notional_amount, ...}
+   ├─ Process: score.py → features.py → model.predict_proba()
+   └─ Output: JSON {prediction, probabilities}
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                        CRITICAL DEPENDENCIES                                 ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+score.py → features.py ★ CRITICAL
+  Why: Score.py calls features.py::FeatureEngineering.transform()
+       to transform new data identically to training data.
+       Without this, inference will fail or give wrong predictions.
+
+train.py → MLflow
+  Why: Logs all hyperparameters, metrics, and model artifacts.
+       Required for azure/register_model.py to work.
+
+deploy_endpoint.py → score.py + environment.yml
+  Why: Deploys score.py as the scoring script.
+       environment.yml defines the runtime environment.
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                        DATA FLOW SUMMARY                                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Raw CSV
+  ↓
+generate_data.py OR trades_synthetic.csv
+  ↓
+features.py (engineer_features)
+  → X: DataFrame (12+ features, scaled)
+  → y: Series (0/1 labels)
+  ↓
+train.py (TradeExceptionPredictor)
+  → Optuna optimization (50 trials)
+  → XGBoost training
+  → Metrics logging
+  ↓
+explain.py (ExplainabilityAnalyzer)
+  → SHAP values
+  → Feature importance
+  ↓
+MLflow artifacts
+  → model.pkl
+  → feature_engineer.pkl
+  ↓
+azure/register_model.py + deploy_endpoint.py
+  ↓
+Azure ML Endpoint
+  ↓
+score.py (inference)
+  → features.py (transform)
+  → predictions
+  ↓
+REST API Response (JSON)
+
