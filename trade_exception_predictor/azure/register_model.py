@@ -92,7 +92,7 @@ def register_model_from_local(
         config['resource_group'],
         config['workspace_name']
     )
-    print(f"✓ Authenticated to Azure ML")
+    print(f"[OK] Authenticated to Azure ML")
     
     # Validate paths
     model_path = Path(model_path)
@@ -129,7 +129,7 @@ def register_model_from_local(
         path=str(model_path),
         name=model_name,
         version=model_version,
-        type='xgboost',
+        type='custom_model',
         description=model_description,
         tags={
             'project': 'trade_exception_predictor',
@@ -149,7 +149,7 @@ def register_model_from_local(
     registered_model = ml_client.models.create_or_update(model)
     
     print(f"\n" + "="*80)
-    print(f"✓ MODEL REGISTERED")
+    print(f"[OK] MODEL REGISTERED")
     print(f"="*80)
     print(f"\nModel Details:")
     print(f"  Name: {registered_model.name}")
@@ -205,7 +205,7 @@ def register_model_from_mlflow(
         config['resource_group'],
         config['workspace_name']
     )
-    print(f"✓ Authenticated to Azure ML")
+    print(f"[OK] Authenticated to Azure ML")
     
     # Load MLflow run metadata
     print(f"\nFetching MLflow run metadata...")
@@ -260,7 +260,7 @@ def register_model_from_mlflow(
     registered_model = ml_client.models.create_or_update(model)
     
     print(f"\n" + "="*80)
-    print(f"✓ MODEL REGISTERED")
+    print(f"[OK] MODEL REGISTERED")
     print(f"="*80)
     print(f"\nModel Details:")
     print(f"  Name: {registered_model.name}")
@@ -329,11 +329,11 @@ if __name__ == '__main__':
                 model_version=args.model_version
             )
         
-        print(f"\n✓ Model registration complete!")
+        print(f"\n[OK] Model registration complete!")
         sys.exit(0)
     
     except Exception as e:
-        print(f"\n✗ Error: {str(e)}")
+        print(f"\n[FAIL] Error: {str(e)}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

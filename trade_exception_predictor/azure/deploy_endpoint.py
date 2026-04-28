@@ -32,9 +32,9 @@ def load_azure_config():
     """Load Azure configuration from .env or environment."""
     
     config = {
-        'subscription_id': os.getenv('subscription_id', '').strip().strip('"'),
-        'resource_group': os.getenv('resource_group_name', '').strip().strip('"'),
-        'workspace_name': os.getenv('workspace_name', '').strip().strip('"'),
+        'subscription_id': os.getenv('subscription_id', ''),
+        'resource_group': os.getenv('resource_group_name', ''),
+        'workspace_name': os.getenv('workspace_name', ''),
     }
     
     # Validate
@@ -104,15 +104,15 @@ def deploy_endpoint(
         config['resource_group'],
         config['workspace_name']
     )
-    print(f"✓ Authenticated to Azure ML")
+    print(f"[OK] Authenticated to Azure ML")
     
     # Check if model exists
     print(f"\nValidating model...")
     try:
         model = ml_client.models.get(model_name, model_version)
-        print(f"✓ Model found: {model.name} (v{model.version})")
+        print(f"[OK] Model found: {model.name} (v{model.version})")
     except Exception as e:
-        print(f"✗ Model not found: {str(e)}")
+        print(f"[FAIL] Model not found: {str(e)}")
         print(f"  Register model first using register_model.py")
         raise
     
@@ -131,10 +131,10 @@ def deploy_endpoint(
     
     try:
         endpoint = ml_client.online_endpoints.begin_create_or_update(endpoint).result()
-        print(f"✓ Endpoint created/updated: {endpoint.name}")
+        print(f"[OK] Endpoint created/updated: {endpoint.name}")
         print(f"  Endpoint URI: {endpoint.scoring_uri}")
     except Exception as e:
-        print(f"✗ Failed to create endpoint: {str(e)}")
+        print(f"[FAIL] Failed to create endpoint: {str(e)}")
         raise
     
     # Create deployment with scoring script
@@ -142,14 +142,14 @@ def deploy_endpoint(
     
     # Resolve paths
     script_dir = Path(__file__).parent.parent
-    score_script = script_dir / 'src' / 'score_updated.py'
+    score_script = script_dir / 'src' / 'score.py'
     env_file = script_dir / 'environment.yml'
-    
+
     if not score_script.exists():
         raise FileNotFoundError(f"Scoring script not found: {score_script}")
     if not env_file.exists():
         raise FileNotFoundError(f"Environment file not found: {env_file}")
-    
+
     print(f"  Scoring script: {score_script}")
     print(f"  Environment: {env_file}")
     
@@ -166,28 +166,28 @@ def deploy_endpoint(
         endpoint_name=endpoint_name,
         model=model.id,
         code_configuration=CodeConfiguration(
-            code=str(script_dir / 'src'),
-            scoring_script='score_updated.py'
-        ),
-        environment=env,
-        instance_type=instance_type,
-        instance_count=instance_count,
-        properties={
-            'min_instances': str(min_instances),
-            'max_instances': str(max_instances)
-        },
-        description='XGBoost deployment with SHAP explanations',
-        tags={
-            'model_name': model_name,
-            'model_version': model_version
+                code=str(script_dir / 'src'),
+                scoring_script='score.py'
+                ),
+                environment=env,
+                instance_type=instance_type,
+                instance_count=instance_count,
+                properties={
+                            'min_instances': str(min_instances),
+                            'max_instances': str(max_instances)
+                        },
+                        description='XGBoost deployment with SHAP explanations',
+                        tags={
+                            'model_name': model_name,
+                            'model_version': model_version
         }
     )
     
     try:
         deployment = ml_client.online_deployments.begin_create_or_update(deployment).result()
-        print(f"✓ Deployment created: {deployment.name}")
+        print(f"[OK] Deployment created: {deployment.name}")
     except Exception as e:
-        print(f"✗ Failed to create deployment: {str(e)}")
+        print(f"[FAIL] Failed to create deployment: {str(e)}")
         raise
     
     # Set traffic to new deployment
@@ -196,13 +196,13 @@ def deploy_endpoint(
     
     try:
         ml_client.online_endpoints.begin_create_or_update(endpoint).result()
-        print(f"✓ Traffic configured (100% to {deployment_name})")
+        print(f"[OK] Traffic configured (100% to {deployment_name})")
     except Exception as e:
-        print(f"⚠️  Warning: Could not configure traffic: {str(e)}")
+        print(f"[WARNING]  Warning: Could not configure traffic: {str(e)}")
     
     # Get endpoint details
     print(f"\n" + "="*80)
-    print(f"✓ DEPLOYMENT COMPLETE")
+    print(f"[OK] DEPLOYMENT COMPLETE")
     print(f"="*80)
     
     endpoint = ml_client.online_endpoints.get(endpoint_name)
@@ -264,7 +264,7 @@ def delete_endpoint(endpoint_name: str):
     )
     
     ml_client.online_endpoints.begin_delete(endpoint_name).result()
-    print(f"✓ Endpoint deleted")
+    print(f"[OK] Endpoint deleted")
 
 
 def test_endpoint(endpoint_name: str):
@@ -400,11 +400,11 @@ if __name__ == '__main__':
         elif args.action == 'test':
             test_endpoint(args.endpoint_name)
         
-        print(f"\n✓ Action completed successfully!")
+        print(f"\n[OK] Action completed successfully!")
         sys.exit(0)
     
     except Exception as e:
-        print(f"\n✗ Error: {str(e)}")
+        print(f"\n[FAIL] Error: {str(e)}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
